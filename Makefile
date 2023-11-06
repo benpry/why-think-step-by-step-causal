@@ -9,8 +9,7 @@ data/bayes_nets/nets_n-$(N_NETS)_nodes-$(N_NODES)_edges-$(N_EDGES).pkl: code/mak
 data/evaluation/causal/true-probs/true-probabilities-net-$(NET_ID).csv: code/evaluate/true_conditional_probs.py data/bayes_nets/nets_n-$(N_NETS)_nodes-$(N_NODES)_edges-$(N_EDGES).pkl
 	python code/evaluate/true_conditional_probs.py \
 		--net_idx $(NET_ID) \
-		--bayes-net-file data/bayes_nets/nets_n-$(N_NETS)_nodes-$(N_NODES)_edges-$(N_EDGES).pkl \
-		--causal
+		--bayes-net-file data/bayes_nets/nets_n-$(N_NETS)_nodes-$(N_NODES)_edges-$(N_EDGES).pkl
 
 data/training-data/causal/selected-pairs/selected-pairs-net-$(NET_ID).csv: data/evaluation/causal/true-probs/casual-true-probabilities-net-$(NET_ID).csv code/make_train_data/select_pairs_to_hold_out.py
 	python3 code/make_train_data/select_pairs_to_hold_out.py \
@@ -44,7 +43,7 @@ data/training-data/samples/causal_train_samples_$(SAMPLE_FORMAT_STR)_net_$(NET_I
 		--causal \
 		--no_eval
 
-$(MODEL_ROOT_FOLDER)/causal-$(MODEL_NAME)/pytorch_model.bin: data/training-data/samples/casual_train_samples_$(SAMPLE_FORMAT_STR)_net_$(NET_ID).csv
+$(MODEL_ROOT_FOLDER)/causal-$(MODEL_NAME)/pytorch_model.bin: data/training-data/samples/causal_train_samples_$(SAMPLE_FORMAT_STR)_net_$(NET_ID).csv
 	python code/finetune/run_clm.py \
 		--model_name_or_path $(BASE_MODEL_PATH) \
 		--train_file data/training-data/samples/causal_train_samples_$(SAMPLE_FORMAT_STR)_net_$(NET_ID).csv \
@@ -96,7 +95,7 @@ data/evaluation/causal/base-model-$(BASE_MODEL_NAME)/negative-scaffolded-gen-pro
 		--bayes-net-file data/bayes_nets/nets_n-$(N_NETS)_nodes-$(N_NODES)_edges-$(N_EDGES).pkl \
 		--negative
 
-results: data/evaluation/causal/true-probs/causal-true-probabilities-net-$(NET_ID).csv \
+results: data/evaluation/causal/true-probs/true-probabilities-net-$(NET_ID).csv \
  data/evaluation/causal/base-model-$(BASE_MODEL_NAME)/fixed-gen-probabilities-$(MODEL_NAME).csv \
  data/evaluation/causal/base-model-$(BASE_MODEL_NAME)/free-gen-probabilities-$(MODEL_NAME)-$(NUM_SAMPLES)samples.csv \
  data/evaluation/causal/base-model-$(BASE_MODEL_NAME)/scaffolded-gen-probabilities-$(MODEL_NAME)-$(NUM_SAMPLES)samples.csv \

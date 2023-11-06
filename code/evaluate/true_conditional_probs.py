@@ -28,6 +28,7 @@ def get_probs_analytically_with_intervention(
     model, target_var, condition_var, condition_val
 ):
     conditional_inference = VariableElimination(model)
+    marginal = conditional_inference.query([target_var]).values[1]
     conditional_prob = conditional_inference.query(
         [target_var], evidence={condition_var: condition_val}
     ).values[1]
@@ -73,7 +74,7 @@ if __name__ == "__main__":
                 conditional_prob,
                 intervention_prob,
             ) = get_probs_analytically_with_intervention(
-                net, target, condition, condition_val
+                net_pgm, target, condition, condition_val
             )
             condition_influence = abs(conditional_prob - marginal)
 
