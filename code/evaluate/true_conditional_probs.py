@@ -7,10 +7,10 @@ import pickle
 from itertools import product
 from argparse import ArgumentParser
 import sys
-from code.core.utils import pom_to_pgm
 from pgmpy.inference.ExactInference import VariableElimination
 
 sys.path.extend(["../core", "./code/core"])
+from utils import pom_to_pgm
 from pyprojroot import here
 
 
