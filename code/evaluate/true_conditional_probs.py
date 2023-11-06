@@ -7,8 +7,12 @@ import pickle
 from itertools import product
 from argparse import ArgumentParser
 import sys
+from code.core.utils import pom_to_pgm
+from pgmpy.inference.ExactInference import VariableElimination
+
 sys.path.extend(["../core", "./code/core"])
 from pyprojroot import here
+
 
 def get_probs_from_samples(samples, target_var, condition_var, condition_val):
     condition_samples = [s for s in samples if s[condition_var] == condition_val]
@@ -19,22 +23,29 @@ def get_probs_from_samples(samples, target_var, condition_var, condition_val):
 
     return target_prob, marginal
 
-def get_probs_analytically(net, target_var, condition_var, condition_val):
-    probs = net.predict_proba({condition_var: condition_val})
-    target_dist = probs[target_var]
-    target_prob = target_dist.probability(True)
+
+def get_probs_analytically_with_intervention(
+    model, target_var, condition_var, condition_val
+):
+    conditional_inference = VariableElimination(model)
+    conditional_prob = conditional_inference.query(
+        [target_var], evidence={condition_var: condition_val}
+    ).values[1]
+    causal_inference = VariableElimination(model.do(condition_var))
+    intervention_prob = conditional_inference.query(
+        [target_var], evidence={condition_var: condition_val}
+    ).values[1]
 
     # get the difference between the true marginal and the conditional
-    marginal = net.predict_proba({})[target_var].probability(True)
 
-    return target_prob, marginal
+    return marginal, conditional_prob, intervention_prob
+
 
 parser = ArgumentParser()
 parser.add_argument("--net_idx", type=int)
 parser.add_argument("--bayes-net-file", type=str)
 
 if __name__ == "__main__":
-
     args = parser.parse_args()
 
     nets = pickle.load(open(here(args.bayes_net_file), "rb"))
@@ -42,12 +53,12 @@ if __name__ == "__main__":
     net.from_pickle()
     net.node_order = None
     all_vars = net.graph.nodes
+    net_pgm = pom_to_pgm(net.model)
 
     distances = net.get_distances()
 
     rows = []
     for target, condition in product(all_vars, all_vars):
-
         if target == condition:
             continue
 
@@ -57,20 +68,31 @@ if __name__ == "__main__":
             distance = -1
 
         for condition_val in (False, True):
+            (
+                marginal,
+                conditional_prob,
+                intervention_prob,
+            ) = get_probs_analytically_with_intervention(
+                net, target, condition, condition_val
+            )
+            condition_influence = abs(conditional_prob - marginal)
 
-            target_prob, marginal = get_probs_analytically(net, target, condition, condition_val)
-            condition_influence = abs(target_prob - marginal)
-
-            rows.append({
-                "target_var": target,
-                "condition_var": condition,
-                "condition_val": condition_val,
-                "cond_target_dist": distance,
-                "prob": target_prob,
-                "marginal": marginal,
-                "condition_influence": condition_influence
-            })
+            rows.append(
+                {
+                    "target_var": target,
+                    "condition_var": condition,
+                    "condition_val": condition_val,
+                    "cond_target_dist": distance,
+                    "conditional_prob": conditional_prob,
+                    "marginal_prob": marginal,
+                    "intervention_prob": intervention_prob,
+                    "condition_influence": condition_influence,
+                }
+            )
 
     df_true = pd.DataFrame(rows)
-    df_true.to_csv(here(f"data/evaluation/true-probs/true-probabilities-net-{args.net_idx}.csv"))
-
+    df_true.to_csv(
+        here(
+            f"data/evaluation/causal/true-probs/true-probabilities-net-{args.net_idx}.csv"
+        )
+    )

@@ -3,16 +3,24 @@ This file contains an implementation of the important functionality for Bayes ne
 """
 from typing import Iterable, Optional
 import numpy as np
-from pomegranate import BayesianNetwork, DiscreteDistribution, ConditionalProbabilityTable, Node
+from pomegranate import (
+    DiscreteDistribution,
+    ConditionalProbabilityTable,
+    Node,
+)
+from pomegranate import BayesianNetwork as PomBN
+from pgmpy.models import BayesianNetwork as PgmBN
+from pgmpy.factors.discrete import TabularCPD
 from itertools import product
 import networkx as nx
+
 
 class BayesNet:
     """
     A Bayes Net for autoregressive inference
     """
 
-    def __init__(self, model: BayesianNetwork, graph: nx.DiGraph):
+    def __init__(self, model: PomBN, graph: nx.DiGraph):
         self.model = model
         self.graph = graph
         self.distances = None
@@ -25,7 +33,10 @@ class BayesNet:
             raw_samples = self.model.sample(n, evidences=evidences, algorithm="gibbs")
 
         node_order = self.get_node_order()
-        samples = [dict(zip(node_order, [int(x) for x in raw_sample])) for raw_sample in raw_samples]
+        samples = [
+            dict(zip(node_order, [int(x) for x in raw_sample]))
+            for raw_sample in raw_samples
+        ]
         return samples
 
     def get_distances(self):
@@ -45,7 +56,11 @@ class BayesNet:
             return True
 
         # step 1: construct the ancestral graph
-        ancestral_nodes = nx.ancestors(self.graph, query1) | nx.ancestors(self.graph, query2) | {query1, query2}
+        ancestral_nodes = (
+            nx.ancestors(self.graph, query1)
+            | nx.ancestors(self.graph, query2)
+            | {query1, query2}
+        )
         for node in conditioned_vars:
             ancestral_nodes |= nx.ancestors(self.graph, node) | {node}
         ancestral_graph = self.graph.subgraph(ancestral_nodes)
@@ -83,7 +98,9 @@ class BayesNet:
 
     def get_node_order(self):
         if (not hasattr(self, "node_order")) or (self.node_order is None):
-            self.node_order = [x.name for x in self.model.graph.states if "joint" not in x.name]
+            self.node_order = [
+                x.name for x in self.model.graph.states if "joint" not in x.name
+            ]
 
         return self.node_order
 
@@ -109,14 +126,13 @@ class BayesNet:
         return probs
 
     def plot(self, *args, **kwargs):
-
         return self.model.plot(*args, **kwargs)
 
     def to_pickle(self):
         self.model = self.model.to_json()
 
     def from_pickle(self):
-        self.model = BayesianNetwork.from_json(self.model)
+        self.model = PomBN.from_json(self.model)
 
 
 def generate_random_edges(n_vars: int, n_edges: int):
@@ -124,9 +140,13 @@ def generate_random_edges(n_vars: int, n_edges: int):
     Generate a random set of edges
     """
     all_pairs = [(i, j) for i in range(n_vars) for j in range(n_vars) if i < j]
-    edges = [all_pairs[i] for i in np.random.choice(len(all_pairs), n_edges, replace=False)]
+    edges = [
+        all_pairs[i] for i in np.random.choice(len(all_pairs), n_edges, replace=False)
+    ]
     # randomly flip half the edges
-    edges = [(edge[1], edge[0]) if np.random.randint(0, 2) == 1 else edge for edge in edges]
+    edges = [
+        (edge[1], edge[0]) if np.random.randint(0, 2) == 1 else edge for edge in edges
+    ]
     return edges
 
 
@@ -147,9 +167,7 @@ def get_conditional_probability():
     return np.random.beta(0.2, 0.2)
 
 
-def create_random_bayes_net(
-    n_vars: int, n_edges: int
-) -> BayesNet:
+def create_random_bayes_net(n_vars: int, n_edges: int) -> BayesNet:
     """
     Generate a random Bayes net
     """
