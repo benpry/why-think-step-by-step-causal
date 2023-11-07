@@ -101,54 +101,61 @@ def main(args):
                 set(),
                 [],
             )
-            for sample in range(args.num_samples):
-                prefix = f"###\ntarget: {target_var}\n{condition_var}={condition_val}\n"
-                generated_var = None
-                target_prob = np.NaN
-                intermediate_vars = set()
-                for i in range(len(all_vars)):
-                    var_probs = get_next_var_probs(
-                        prefix, tokenizer, model, args, var_tokens
-                    )
-                    next_var = np.random.choice(all_vars, p=var_probs.numpy())
-                    prefix += next_var + "="
-                    if next_var == target_var:
-                        target_prob = get_probability_from_transformer(
+            for intervention in (True, False):
+                for sample in range(args.num_samples):
+                    prefix = "###\ntarget: {target_var}\n"
+                    if intervention:
+                        prefix += f"do({condition_var}={condition_val})\n"
+                    else:
+                        prefix += f"{condition_var}={condition_val}\n"
+
+                    generated_var = None
+                    target_prob = np.NaN
+                    intermediate_vars = set()
+                    for i in range(len(all_vars)):
+                        var_probs = get_next_var_probs(
+                            prefix, tokenizer, model, args, var_tokens
+                        )
+                        next_var = np.random.choice(all_vars, p=var_probs.numpy())
+                        prefix += next_var + "="
+                        if next_var == target_var:
+                            target_prob = get_probability_from_transformer(
+                                prefix, tokenizer, model, args
+                            )
+                            break
+                        elif next_var != condition_var:
+                            intermediate_vars.add(next_var)
+                        prob = get_probability_from_transformer(
                             prefix, tokenizer, model, args
                         )
-                        break
-                    elif next_var != condition_var:
-                        intermediate_vars.add(next_var)
-                    prob = get_probability_from_transformer(
-                        prefix, tokenizer, model, args
-                    )
-                    val = np.random.choice(2, p=[1 - prob, prob])
-                    prefix += str(val) + "\n"
-                if not np.isnan(target_prob):
-                    target_probs.append(target_prob)
-                    ns_intermediate.append(len(intermediate_vars))
-                    is_d_separating.append(
-                        int(
-                            net.check_d_separated(
-                                condition_var, target_var, intermediate_vars
+                        val = np.random.choice(2, p=[1 - prob, prob])
+                        prefix += str(val) + "\n"
+                    if not np.isnan(target_prob):
+                        target_probs.append(target_prob)
+                        ns_intermediate.append(len(intermediate_vars))
+                        is_d_separating.append(
+                            int(
+                                net.check_d_separated(
+                                    condition_var, target_var, intermediate_vars
+                                )
                             )
                         )
-                    )
-                    all_intermediate_vars |= intermediate_vars
+                        all_intermediate_vars |= intermediate_vars
 
-            rows.append(
-                {
-                    "target_var": target_var,
-                    "condition_var": condition_var,
-                    "condition_val": condition_val,
-                    "prob": np.mean(target_probs),
-                    "prob_std": np.std(target_probs),
-                    "prop_valid": len(target_probs) / args.num_samples,
-                    "n_intermediate": np.mean(ns_intermediate),
-                    "prop_d_separating": np.mean(is_d_separating),
-                    "all_intermediate_vars": list(all_intermediate_vars),
-                }
-            )
+                rows.append(
+                    {
+                        "target_var": target_var,
+                        "condition_var": condition_var,
+                        "condition_val": condition_val,
+                        "intervention": int(intervention),
+                        "prob": np.mean(target_probs),
+                        "prob_std": np.std(target_probs),
+                        "prop_valid": len(target_probs) / args.num_samples,
+                        "n_intermediate": np.mean(ns_intermediate),
+                        "prop_d_separating": np.mean(is_d_separating),
+                        "all_intermediate_vars": list(all_intermediate_vars),
+                    }
+                )
 
     df_free = pd.DataFrame(rows)
     return df_free
