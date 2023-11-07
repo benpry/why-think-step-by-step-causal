@@ -92,6 +92,7 @@ if __name__ == "__main__":
                         "target_var": target,
                         "condition_var": condition,
                         "condition_val": condition_val,
+                        "intervention": int(intervention),
                         "prob": final_prob,
                     }
                 )
