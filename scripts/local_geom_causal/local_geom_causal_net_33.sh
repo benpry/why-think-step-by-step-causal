@@ -23,7 +23,7 @@ export condition="local_joint_exp"
 export SAMPLE_FORMAT=$condition
 export SAMPLE_FORMAT_STR=$condition
 CONDITION_WITH_HYPHEN=$(echo $condition | tr _ -)
-export MODEL_NAME="${CONDITION_WITH_HYPHEN}-net-${NET_ID}-causal"
+export MODEL_NAME="${CONDITION_WITH_HYPHEN}-net-${NET_ID}"
 
 base_arch="/alternate-base-lms/small"
 
