@@ -108,11 +108,11 @@ if __name__ == "__main__":
         )
     else:
         df.to_csv(
-            here(f"data/evaluation/scaffolded-gen-all-probabilities-{model_name}.csv")
+            here(f"data/evaluation/causal/scaffolded-gen-all-probabilities-{model_name}.csv")
         )
 
     df_summary = (
-        df.groupby(["target_var", "condition_var", "condition_val"])
+        df.groupby(["target_var", "condition_var", "condition_val", "intervention"])
         .agg({"prob": ["mean", "std"]})
         .reset_index()
     )

@@ -11,7 +11,7 @@ from tqdm import tqdm
 import pickle
 import sys
 from pyprojroot import here
-
+from transformers import LogitsProcessor, LogitsProcessorList
 sys.path.extend(["../core", "./code/core"])
 from utils import (
     set_up_transformer,
@@ -19,6 +19,19 @@ from utils import (
     PAD_TOKEN_ID,
     EQUALS_TOKEN_ID,
 )
+from networkx.exception import NetworkXError
+
+# re-implemneted from newer version of HuggingFace (to avoid version conflict hell)
+class SuppressTokensLogitsProcessor(LogitsProcessor):
+        r"""This processor can be used to suppress a list of tokens. The processor will set their log probs to `-inf` so that they are not sampled."""
+            
+        def __init__(self, suppress_tokens):
+            self.suppress_tokens = list(suppress_tokens)
+                
+        def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+            scores[:, self.suppress_tokens] = -float("inf")
+            return scores
+
 
 
 def tokenize_vars(all_vars, tokenizer, args):
@@ -30,45 +43,24 @@ def tokenize_vars(all_vars, tokenizer, args):
     return var_tokens
 
 
-def get_next_var_probs(prefix, tokenizer, model, args, var_tokens):
+def generate_next_var(prefix, tokenizer, model, args, var_tokens, token_suppressor):
     # generate up to the next equals sign
     token_ids = tokenizer(prefix, return_tensors="pt").input_ids.to(args.device)
     outputs = model.generate(
         token_ids,
         return_dict_in_generate=True,
         output_scores=True,
-        max_new_tokens=2,
+        max_new_tokens=6,
         pad_token_id=PAD_TOKEN_ID,
         eos_token_id=EQUALS_TOKEN_ID,
         return_tensors="pt",
+        logits_processor=token_suppressor
     )
-    # get the logits from the generation
-    output_logits = outputs.scores
-    # convert the relevant subset into probabilities
-    vars_lst = list(var_tokens.keys())
-    tokens_lst = list([var_tokens[t] for t in vars_lst])
-    var_logits = []
-    for token_vars, tokens in zip(vars_lst, tokens_lst):
-        sum_logit = 0
-        for i, token in enumerate(tokens):
-            try:
-                sum_logit += output_logits[i][0][token]
-            except:
-                print("tuple index out of range error!")
-                print("output logits length")
-                try:
-                    print(len(output_logits))
-                except:
-                    print("logits had no shape")
-                print(f"i: {i}")
-                print(f"token: {token}")
-        var_logits.append(sum_logit)
-    var_logits = torch.tensor(var_logits)
 
-    # turn the logits into probabilities
-    var_probs = torch.softmax(var_logits, dim=-1)
+    added_tokens = outputs.sequences[0][token_ids.shape[1]:]
+    added_str = tokenizer.decode(added_tokens)
 
-    return var_probs
+    return added_str
 
 
 def main(args):
@@ -78,6 +70,14 @@ def main(args):
     net.from_pickle()
     all_vars = net.graph.nodes
     var_tokens = tokenize_vars(all_vars, tokenizer, args)
+
+    token_suppressor = LogitsProcessorList(
+            [
+                SuppressTokensLogitsProcessor(
+                    suppress_tokens=tokenizer(["### target:"]).input_ids[0]
+                    )
+                 ]
+    )
 
     df_pairs = pd.read_csv(
         here(f"data/training-data/selected-pairs/selected-pairs-net-{args.net_idx}.csv")
@@ -95,15 +95,15 @@ def main(args):
             continue
 
         for condition_val in (0, 1):
-            target_probs, ns_intermediate, all_intermediate_vars, is_d_separating = (
-                [],
-                [],
-                set(),
-                [],
-            )
-            for intervention in (True, False):
+            for intervention in (False, True):
+                target_probs, ns_intermediate, all_intermediate_vars, is_d_separating = (
+                    [],
+                    [],
+                    set(),
+                    [],
+                )
                 for sample in range(args.num_samples):
-                    prefix = "###\ntarget: {target_var}\n"
+                    prefix = f"###\ntarget: {target_var}\n"
                     if intervention:
                         prefix += f"do({condition_var}={condition_val})\n"
                     else:
@@ -113,34 +113,51 @@ def main(args):
                     target_prob = np.NaN
                     intermediate_vars = set()
                     for i in range(len(all_vars)):
-                        var_probs = get_next_var_probs(
-                            prefix, tokenizer, model, args, var_tokens
+
+                        next_str = generate_next_var(
+                            prefix, tokenizer, model, args, var_tokens,
+                            token_suppressor = token_suppressor
                         )
-                        next_var = np.random.choice(all_vars, p=var_probs.numpy())
-                        prefix += next_var + "="
-                        if next_var == target_var:
+
+                        prefix += next_str
+                        next_var = next_str.replace("=", "")
+                        if target_var in next_var:
+                            # get the target probability and break if we've generated
+                            # the target variable
                             target_prob = get_probability_from_transformer(
                                 prefix, tokenizer, model, args
                             )
                             break
                         elif next_var != condition_var:
                             intermediate_vars.add(next_var)
+
+                        # get the next probability and sample a value
                         prob = get_probability_from_transformer(
                             prefix, tokenizer, model, args
                         )
                         val = np.random.choice(2, p=[1 - prob, prob])
-                        prefix += str(val) + "\n"
+                        prefix += str(val)
+                        if "do" in next_str:
+                            print(f"added do!")
+                            prefix += ")"
+                            print(prefix)
+                        
+                        prefix += "\n"
+
                     if not np.isnan(target_prob):
                         target_probs.append(target_prob)
                         ns_intermediate.append(len(intermediate_vars))
-                        is_d_separating.append(
-                            int(
-                                net.check_d_separated(
-                                    condition_var, target_var, intermediate_vars
+                        try:
+                            is_d_separating.append(
+                                int(
+                                    net.check_d_separated(
+                                        condition_var, target_var, intermediate_vars
+                                    )
                                 )
                             )
-                        )
-                        all_intermediate_vars |= intermediate_vars
+                            all_intermediate_vars |= intermediate_vars
+                        except NetworkXError:
+                            print(f"generated invalid variable name")
 
                 rows.append(
                     {
@@ -177,6 +194,6 @@ if __name__ == "__main__":
     model_name = args.model_folder.split("/")[-1]
     df_free.to_csv(
         here(
-            f"data/evaluation/base-model-{args.base_model_name}/free-gen-probabilities-{model_name}-{args.num_samples}samples.csv"
+            f"data/evaluation/causal/base-model-{args.base_model_name}/free-gen-probabilities-{model_name}-{args.num_samples}samples.csv"
         )
     )

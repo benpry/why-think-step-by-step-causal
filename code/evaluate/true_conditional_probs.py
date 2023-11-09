@@ -33,7 +33,7 @@ def get_probs_analytically_with_intervention(
         [target_var], evidence={condition_var: condition_val}
     ).values[1]
     causal_inference = VariableElimination(model.do(condition_var))
-    intervention_prob = conditional_inference.query(
+    intervention_prob = causal_inference.query(
         [target_var], evidence={condition_var: condition_val}
     ).values[1]
 
